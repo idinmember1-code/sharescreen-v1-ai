@@ -443,13 +443,21 @@ btnStartShare.onclick = async () => {
   await waitIceComplete(hostPc);
 
   try{
-    await window.storage.set('room:'+hostRoom, JSON.stringify({
+    const payload = JSON.stringify({
       offer: { sdp: hostPc.localDescription.sdp, type: hostPc.localDescription.type },
       answer: null,
       ts: Date.now()
-    }), true);
+    });
+    console.log('[debug] payload size (chars):', payload.length);
+    const result = await window.storage.set('room:'+hostRoom, payload, true);
+    console.log('[debug] storage.set result:', result);
+    if(!result){
+      setHostStatus('บันทึกสัญญาณไม่สำเร็จ (storage คืนค่า null) ลองอีกครั้ง', false);
+      return;
+    }
   }catch(e){
-    setHostStatus('บันทึกสัญญาณไม่สำเร็จ ลองอีกครั้ง', false);
+    console.error('[debug] storage.set threw:', e);
+    setHostStatus('บันทึกสัญญาณไม่สำเร็จ: ' + (e && e.message ? e.message : String(e)), false);
     return;
   }
 
@@ -559,9 +567,18 @@ btnConnect.onclick = async () => {
     const latest = await window.storage.get('room:'+code, true);
     const latestData = latest && latest.value ? JSON.parse(latest.value) : data;
     latestData.answer = { sdp: viewPc.localDescription.sdp, type: viewPc.localDescription.type };
-    await window.storage.set('room:'+code, JSON.stringify(latestData), true);
+    const payload = JSON.stringify(latestData);
+    console.log('[debug] answer payload size (chars):', payload.length);
+    const result = await window.storage.set('room:'+code, payload, true);
+    console.log('[debug] storage.set result:', result);
+    if(!result){
+      setViewStatus('ส่งสัญญาณตอบกลับไม่สำเร็จ (storage คืนค่า null)', false);
+      btnConnect.disabled = false;
+      return;
+    }
   }catch(e){
-    setViewStatus('ส่งสัญญาณตอบกลับไม่สำเร็จ', false);
+    console.error('[debug] storage.set threw:', e);
+    setViewStatus('ส่งสัญญาณตอบกลับไม่สำเร็จ: ' + (e && e.message ? e.message : String(e)), false);
     btnConnect.disabled = false;
     return;
   }
