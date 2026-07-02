@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ON AIR — แชร์จอสด</title>
+<style>
+  :root{
+    --bg:#0a0d0b;
+    --panel:#111512;
+    --panel-edge:#1d2420;
+    --green:#39ff88;
+    --green-dim:#1f8a52;
+    --amber:#ff5c3a;
+    --text:#e7f5ec;
+    --muted:#6f8478;
+    --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+    --sans: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:
+      repeating-linear-gradient(0deg, rgba(57,255,136,0.025) 0px, rgba(57,255,136,0.025) 1px, transparent 1px, transparent 3px),
+      radial-gradient(ellipse at top, #0d1210 0%, var(--bg) 60%);
+    color:var(--text);
+    font-family:var(--sans);
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    padding:28px 16px 60px;
+  }
+  header{
+    width:100%;
+    max-width:640px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin-bottom:26px;
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-family:var(--mono);
+    letter-spacing:0.12em;
+    font-size:13px;
+    color:var(--muted);
+    text-transform:uppercase;
+  }
+  .dot-live{
+    width:8px;height:8px;border-radius:50%;
+    background:var(--muted);
+    box-shadow:0 0 0 0 rgba(255,92,58,0);
+    transition:all .3s;
+  }
+  .dot-live.on{
+    background:var(--amber);
+    animation:pulse 1.4s infinite;
+  }
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 rgba(255,92,58,.55);}
+    70%{box-shadow:0 0 0 10px rgba(255,92,58,0);}
+    100%{box-shadow:0 0 0 0 rgba(255,92,58,0);}
+  }
+  .switch{
+    display:flex;
+    background:var(--panel);
+    border:1px solid var(--panel-edge);
+    border-radius:999px;
+    padding:3px;
+    font-family:var(--mono);
+    font-size:12px;
+  }
+  .switch button{
+    border:none;
+    background:transparent;
+    color:var(--muted);
+    padding:7px 14px;
+    border-radius:999px;
+    cursor:pointer;
+    letter-spacing:.05em;
+  }
+  .switch button.active{
+    background:var(--green);
+    color:#052012;
+    font-weight:700;
+  }
+  main{width:100%;max-width:640px;}
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--panel-edge);
+    border-radius:18px;
+    padding:26px 24px;
+  }
+
+  h1.title{
+    font-size:22px;
+    margin:0 0 4px;
+    letter-spacing:-0.01em;
+  }
+  p.sub{
+    color:var(--muted);
+    font-size:13.5px;
+    margin:0 0 22px;
+    line-height:1.5;
+  }
+
+  /* dial / signature element */
+  .dial-wrap{
+    display:flex;
+    justify-content:center;
+    margin:6px 0 26px;
+  }
+  .dial{
+    position:relative;
+    width:200px;height:200px;
+    border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    background: conic-gradient(from 0deg, rgba(57,255,136,0.12), transparent 20%, transparent 80%, rgba(57,255,136,0.12));
+    border:1px solid var(--panel-edge);
+  }
+  .dial::before{
+    content:'';
+    position:absolute;
+    inset:14px;
+    border-radius:50%;
+    border:1px dashed var(--panel-edge);
+  }
+  .dial-inner{
+    text-align:center;
+    font-family:var(--mono);
+  }
+  .dial-label{
+    font-size:10px;
+    color:var(--muted);
+    letter-spacing:.2em;
+    text-transform:uppercase;
+  }
+  .dial-code{
+    font-size:40px;
+    font-weight:700;
+    letter-spacing:.06em;
+    color:var(--green);
+    margin:4px 0;
+  }
+  .dial-status{
+    font-size:10.5px;
+    color:var(--muted);
+  }
+
+  video{
+    width:100%;
+    border-radius:12px;
+    background:#000;
+    display:block;
+    border:1px solid var(--panel-edge);
+  }
+
+  .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;}
+
+  button.primary{
+    flex:1;
+    background:var(--green);
+    color:#052012;
+    border:none;
+    font-weight:700;
+    font-family:var(--sans);
+    font-size:14px;
+    padding:13px 18px;
+    border-radius:10px;
+    cursor:pointer;
+    letter-spacing:.01em;
+  }
+  button.primary:disabled{opacity:.4;cursor:not-allowed;}
+  button.ghost{
+    background:transparent;
+    border:1px solid var(--panel-edge);
+    color:var(--text);
+    font-family:var(--mono);
+    font-size:13px;
+    padding:12px 16px;
+    border-radius:10px;
+    cursor:pointer;
+  }
+  button.stop{
+    background:var(--amber);
+    color:#2a0a02;
+  }
+
+  input[type=text]{
+    width:100%;
+    background:#0d100e;
+    border:1px solid var(--panel-edge);
+    color:var(--green);
+    font-family:var(--mono);
+    font-size:24px;
+    letter-spacing:.3em;
+    text-align:center;
+    text-transform:uppercase;
+    padding:14px;
+    border-radius:10px;
+    margin-bottom:14px;
+  }
+  input[type=text]::placeholder{color:var(--panel-edge);letter-spacing:.1em;}
+
+  .status-line{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-family:var(--mono);
+    font-size:12px;
+    color:var(--muted);
+    margin-top:16px;
+  }
+  .status-line .led{
+    width:7px;height:7px;border-radius:50%;background:var(--muted);
+  }
+  .status-line .led.ok{background:var(--green);}
+  .status-line .led.err{background:var(--amber);}
+
+  .hint{
+    font-family:var(--mono);
+    font-size:11.5px;
+    color:var(--panel-edge);
+    margin-top:18px;
+    line-height:1.6;
+  }
+  .hint b{color:var(--muted);}
+
+  footer{
+    margin-top:24px;
+    font-family:var(--mono);
+    font-size:10.5px;
+    color:var(--panel-edge);
+    text-align:center;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="dot-live" id="liveDot"></span>
+    ON AIR / SIGNAL
+  </div>
+  <div class="switch">
+    <button id="tabHost" class="active">แชร์จอ</button>
+    <button id="tabView">ดูจอ</button>
+  </div>
+</header>
+
+<main>
+  <!-- HOST PANEL -->
+  <section id="hostPanel" class="panel">
+    <h1 class="title">แชร์จอสด</h1>
+    <p class="sub">กดเริ่ม แล้วเลือกหน้าจอ/แท็บที่จะแชร์ จากนั้นบอกรหัสห้องให้อีกเครื่องพิมพ์ในแท็บ "ดูจอ"</p>
+
+    <div class="dial-wrap">
+      <div class="dial">
+        <div class="dial-inner">
+          <div class="dial-label">room code</div>
+          <div class="dial-code" id="roomCodeDisplay">----</div>
+          <div class="dial-status" id="hostDialStatus">ยังไม่เริ่ม</div>
+        </div>
+      </div>
+    </div>
+
+    <video id="hostPreview" autoplay muted playsinline></video>
+
+    <div class="row">
+      <button class="primary" id="btnStartShare">เริ่มแชร์หน้าจอ</button>
+      <button class="ghost" id="btnCopyCode">คัดลอกรหัส</button>
+    </div>
+    <div class="row" id="stopRow" style="display:none;">
+      <button class="primary stop" id="btnStopShare">หยุดแชร์</button>
+    </div>
+
+    <div class="status-line"><span class="led" id="hostLed"></span><span id="hostStatusText">รอเริ่มการแชร์</span></div>
+    <div class="hint"><b>หมายเหตุ:</b> ต้องใช้เบราว์เซอร์ที่รองรับการแชร์จอ (Chrome/Edge บนคอมพิวเตอร์แนะนำที่สุด) และทั้งสองเครื่องต้องเปิดหน้านี้ค้างไว้ระหว่างที่แชร์</div>
+  </section>
+
+  <!-- VIEWER PANEL -->
+  <section id="viewerPanel" class="panel" hidden>
+    <h1 class="title">ดูจอสด</h1>
+    <p class="sub">พิมพ์รหัสห้องที่ได้จากเครื่องที่แชร์ แล้วกดเชื่อมต่อ</p>
+
+    <input type="text" id="roomInput" placeholder="XXXX" maxlength="4" inputmode="text">
+
+    <div class="row">
+      <button class="primary" id="btnConnect">เชื่อมต่อ</button>
+    </div>
+
+    <video id="viewerVideo" autoplay playsinline style="margin-top:16px;"></video>
+
+    <div class="status-line"><span class="led" id="viewLed"></span><span id="viewStatusText">รอพิมพ์รหัสห้อง</span></div>
+    <div class="hint">ถ้าเชื่อมต่อไม่ติดลองอยู่ Wi-Fi เดียวกันกับเครื่องที่แชร์ หรือรอสักครู่แล้วลองใหม่</div>
+  </section>
+</main>
+
+<footer>WEBRTC · PEER-TO-PEER · NO SERVER RECORDING</footer>
+
+<script>
+const ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' }
+];
+
+// ---------- tab switching ----------
+const tabHost = document.getElementById('tabHost');
+const tabView = document.getElementById('tabView');
+const hostPanel = document.getElementById('hostPanel');
+const viewerPanel = document.getElementById('viewerPanel');
+tabHost.onclick = () => { tabHost.classList.add('active'); tabView.classList.remove('active'); hostPanel.hidden=false; viewerPanel.hidden=true; };
+tabView.onclick = () => { tabView.classList.add('active'); tabHost.classList.remove('active'); viewerPanel.hidden=false; hostPanel.hidden=true; };
+
+const liveDot = document.getElementById('liveDot');
+
+function genCode(){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let c='';
+  for(let i=0;i<4;i++) c+=chars[Math.floor(Math.random()*chars.length)];
+  return c;
+}
+
+async function waitIceComplete(pc){
+  if(pc.iceGatheringState === 'complete') return;
+  await new Promise(resolve=>{
+    function check(){
+      if(pc.iceGatheringState === 'complete'){
+        pc.removeEventListener('icegatheringstatechange', check);
+        resolve();
+      }
+    }
+    pc.addEventListener('icegatheringstatechange', check);
+    // safety timeout in case gathering never fully completes
+    setTimeout(resolve, 4000);
+  });
+}
+
+// ================= HOST =================
+let hostPc=null, hostStream=null, hostRoom=null, hostPollTimer=null;
+
+const roomCodeDisplay = document.getElementById('roomCodeDisplay');
+const hostDialStatus = document.getElementById('hostDialStatus');
+const hostStatusText = document.getElementById('hostStatusText');
+const hostLed = document.getElementById('hostLed');
+const btnStartShare = document.getElementById('btnStartShare');
+const btnStopShare = document.getElementById('btnStopShare');
+const stopRow = document.getElementById('stopRow');
+const btnCopyCode = document.getElementById('btnCopyCode');
+const hostPreview = document.getElementById('hostPreview');
+
+function setHostStatus(text, ok){
+  hostStatusText.textContent = text;
+  hostLed.className = 'led' + (ok===true?' ok':ok===false?' err':'');
+}
+
+btnCopyCode.onclick = async () => {
+  if(!hostRoom) return;
+  try{
+    await navigator.clipboard.writeText(hostRoom);
+    btnCopyCode.textContent = 'คัดลอกแล้ว ✓';
+    setTimeout(()=>btnCopyCode.textContent='คัดลอกรหัส', 1500);
+  }catch(e){ /* clipboard may be blocked, ignore silently */ }
+};
+
+btnStartShare.onclick = async () => {
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia){
+    setHostStatus('เบราว์เซอร์นี้ไม่รองรับการแชร์หน้าจอ', false);
+    return;
+  }
+  try{
+    hostStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
+  }catch(e){
+    setHostStatus('ยกเลิกหรือไม่ได้รับอนุญาตให้แชร์จอ', false);
+    return;
+  }
+
+  hostPreview.srcObject = hostStream;
+  hostRoom = genCode();
+  roomCodeDisplay.textContent = hostRoom;
+  hostDialStatus.textContent = 'กำลังเชื่อมต่อ...';
+  liveDot.classList.add('on');
+  btnStartShare.disabled = true;
+  stopRow.style.display='flex';
+  setHostStatus('กำลังสร้างสัญญาณเชื่อมต่อ...');
+
+  hostPc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  hostStream.getTracks().forEach(t => hostPc.addTrack(t, hostStream));
+
+  hostStream.getVideoTracks()[0].addEventListener('ended', stopHostShare);
+
+  hostPc.onconnectionstatechange = () => {
+    if(hostPc.connectionState === 'connected'){
+      setHostStatus('เชื่อมต่อสำเร็จ กำลังแชร์สด', true);
+      hostDialStatus.textContent = 'LIVE';
+    } else if(['disconnected','failed','closed'].includes(hostPc.connectionState)){
+      setHostStatus('การเชื่อมต่อหลุด', false);
+      hostDialStatus.textContent = 'หลุดการเชื่อมต่อ';
+    }
+  };
+
+  const offer = await hostPc.createOffer();
+  await hostPc.setLocalDescription(offer);
+  await waitIceComplete(hostPc);
+
+  try{
+    await window.storage.set('room:'+hostRoom, JSON.stringify({
+      offer: { sdp: hostPc.localDescription.sdp, type: hostPc.localDescription.type },
+      answer: null,
+      ts: Date.now()
+    }), true);
+  }catch(e){
+    setHostStatus('บันทึกสัญญาณไม่สำเร็จ ลองอีกครั้ง', false);
+    return;
+  }
+
+  setHostStatus('รอเครื่องผู้ชมพิมพ์รหัส ' + hostRoom, null);
+
+  // poll for answer
+  hostPollTimer = setInterval(async ()=>{
+    try{
+      const res = await window.storage.get('room:'+hostRoom, true);
+      if(res && res.value){
+        const data = JSON.parse(res.value);
+        if(data.answer && hostPc.signalingState === 'have-local-offer'){
+          await hostPc.setRemoteDescription(new RTCSessionDescription(data.answer));
+          clearInterval(hostPollTimer);
+        }
+      }
+    }catch(e){ /* key may not exist yet */ }
+  }, 1500);
+};
+
+function stopHostShare(){
+  liveDot.classList.remove('on');
+  if(hostPollTimer) clearInterval(hostPollTimer);
+  if(hostStream) hostStream.getTracks().forEach(t=>t.stop());
+  if(hostPc) hostPc.close();
+  hostPc=null; hostStream=null;
+  hostPreview.srcObject=null;
+  btnStartShare.disabled=false;
+  stopRow.style.display='none';
+  hostDialStatus.textContent='หยุดแล้ว';
+  setHostStatus('หยุดแชร์แล้ว');
+}
+btnStopShare.onclick = stopHostShare;
+
+// ================= VIEWER =================
+let viewPc=null, viewPollTimer=null;
+const roomInput = document.getElementById('roomInput');
+const btnConnect = document.getElementById('btnConnect');
+const viewerVideo = document.getElementById('viewerVideo');
+const viewStatusText = document.getElementById('viewStatusText');
+const viewLed = document.getElementById('viewLed');
+
+function setViewStatus(text, ok){
+  viewStatusText.textContent = text;
+  viewLed.className = 'led' + (ok===true?' ok':ok===false?' err':'');
+}
+
+roomInput.oninput = () => { roomInput.value = roomInput.value.toUpperCase(); };
+
+btnConnect.onclick = async () => {
+  const code = roomInput.value.trim().toUpperCase();
+  if(code.length < 4){ setViewStatus('กรอกรหัสห้องให้ครบก่อน', false); return; }
+
+  btnConnect.disabled = true;
+  setViewStatus('กำลังค้นหาห้อง...');
+
+  let data=null, tries=0;
+  while(tries < 15){
+    try{
+      const res = await window.storage.get('room:'+code, true);
+      if(res && res.value){
+        data = JSON.parse(res.value);
+        if(data.offer) break;
+      }
+    }catch(e){ /* not found yet */ }
+    tries++;
+    await new Promise(r=>setTimeout(r, 1200));
+  }
+
+  if(!data || !data.offer){
+    setViewStatus('ไม่พบห้องนี้ ตรวจสอบรหัสอีกครั้ง', false);
+    btnConnect.disabled = false;
+    return;
+  }
+
+  setViewStatus('พบห้องแล้ว กำลังเชื่อมต่อ...');
+
+  viewPc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  viewPc.ontrack = (e) => {
+    viewerVideo.srcObject = e.streams[0];
+  };
+  viewPc.onconnectionstatechange = () => {
+    if(viewPc.connectionState === 'connected'){
+      setViewStatus('เชื่อมต่อสำเร็จ กำลังรับชมสด', true);
+    } else if(['disconnected','failed','closed'].includes(viewPc.connectionState)){
+      setViewStatus('การเชื่อมต่อหลุด', false);
+    }
+  };
+
+  await viewPc.setRemoteDescription(new RTCSessionDescription(data.offer));
+  const answer = await viewPc.createAnswer();
+  await viewPc.setLocalDescription(answer);
+  await waitIceComplete(viewPc);
+
+  try{
+    const latest = await window.storage.get('room:'+code, true);
+    const latestData = latest && latest.value ? JSON.parse(latest.value) : data;
+    latestData.answer = { sdp: viewPc.localDescription.sdp, type: viewPc.localDescription.type };
+    await window.storage.set('room:'+code, JSON.stringify(latestData), true);
+  }catch(e){
+    setViewStatus('ส่งสัญญาณตอบกลับไม่สำเร็จ', false);
+    btnConnect.disabled = false;
+    return;
+  }
+
+  btnConnect.disabled = false;
+};
+</script>
+
+</body>
+</html>
