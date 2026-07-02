@@ -279,7 +279,7 @@
     </div>
 
     <div class="status-line"><span class="led" id="hostLed"></span><span id="hostStatusText">รอเริ่มการแชร์</span></div>
-    <div class="hint"><b>หมายเหตุ:</b> ต้องใช้เบราว์เซอร์ที่รองรับการแชร์จอ (Chrome/Edge บนคอมพิวเตอร์แนะนำที่สุด) และทั้งสองเครื่องต้องเปิดหน้านี้ค้างไว้ระหว่างที่แชร์</div>
+    <div class="hint" id="hostHint"><b>หมายเหตุ:</b> คอมพิวเตอร์ (Chrome/Edge) แชร์ได้ทั้งหน้าจอ ส่วน <b>iPad/iPhone</b> ตัว Safari ไม่รองรับแคปเจอร์หน้าจอเลย ระบบจะสลับไปแชร์ภาพจากกล้องแทนโดยอัตโนมัติ ทั้งสองเครื่องต้องเปิดหน้านี้ค้างไว้ระหว่างแชร์</div>
   </section>
 
   <!-- VIEWER PANEL -->
@@ -296,7 +296,7 @@
     <video id="viewerVideo" autoplay playsinline style="margin-top:16px;"></video>
 
     <div class="status-line"><span class="led" id="viewLed"></span><span id="viewStatusText">รอพิมพ์รหัสห้อง</span></div>
-    <div class="hint">ถ้าเชื่อมต่อไม่ติดลองอยู่ Wi-Fi เดียวกันกับเครื่องที่แชร์ หรือรอสักครู่แล้วลองใหม่</div>
+    <div class="hint">รองรับ iPad/iPhone/คอมพิวเตอร์ ทุกเครื่องดูได้ปกติ ถ้าเชื่อมต่อไม่ติดลองรอสักครู่แล้วกด "เชื่อมต่อ" ใหม่</div>
   </section>
 </main>
 
@@ -305,8 +305,26 @@
 <script>
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' }
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+  { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
 ];
+
+const SUPPORTS_SCREEN_CAPTURE = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+
+async function getBroadcastStream(){
+  if(SUPPORTS_SCREEN_CAPTURE){
+    const stream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
+    return { stream, mode:'screen' };
+  }
+  // iPad / iPhone Safari (and any browser without screen capture): fall back to camera
+  if(navigator.mediaDevices && navigator.mediaDevices.getUserMedia){
+    const stream = await navigator.mediaDevices.getUserMedia({ video:{facingMode:'environment'}, audio:true });
+    return { stream, mode:'camera' };
+  }
+  throw new Error('no-capture-api');
+}
 
 // ---------- tab switching ----------
 const tabHost = document.getElementById('tabHost');
@@ -368,15 +386,22 @@ btnCopyCode.onclick = async () => {
 };
 
 btnStartShare.onclick = async () => {
-  if(!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia){
-    setHostStatus('เบราว์เซอร์นี้ไม่รองรับการแชร์หน้าจอ', false);
+  let mode = 'screen';
+  try{
+    const result = await getBroadcastStream();
+    hostStream = result.stream;
+    mode = result.mode;
+  }catch(e){
+    if(e && e.name === 'NotAllowedError'){
+      setHostStatus('ยกเลิกหรือไม่ได้รับอนุญาตให้แชร์', false);
+    } else {
+      setHostStatus('อุปกรณ์นี้ไม่รองรับกล้องหรือหน้าจอเลย', false);
+    }
     return;
   }
-  try{
-    hostStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
-  }catch(e){
-    setHostStatus('ยกเลิกหรือไม่ได้รับอนุญาตให้แชร์จอ', false);
-    return;
+
+  if(mode === 'camera'){
+    setHostStatus('อุปกรณ์นี้แชร์หน้าจอไม่ได้ (ข้อจำกัดของ iPad/iPhone) กำลังแชร์ภาพจากกล้องแทน', null);
   }
 
   hostPreview.srcObject = hostStream;
@@ -394,12 +419,22 @@ btnStartShare.onclick = async () => {
   hostStream.getVideoTracks()[0].addEventListener('ended', stopHostShare);
 
   hostPc.onconnectionstatechange = () => {
-    if(hostPc.connectionState === 'connected'){
+    const s = hostPc.connectionState;
+    if(s === 'connecting'){
+      setHostStatus('กำลังเชื่อมต่อสัญญาณ...', null);
+      hostDialStatus.textContent = 'กำลังต่อ...';
+    } else if(s === 'connected'){
       setHostStatus('เชื่อมต่อสำเร็จ กำลังแชร์สด', true);
       hostDialStatus.textContent = 'LIVE';
-    } else if(['disconnected','failed','closed'].includes(hostPc.connectionState)){
-      setHostStatus('การเชื่อมต่อหลุด', false);
-      hostDialStatus.textContent = 'หลุดการเชื่อมต่อ';
+    } else if(s === 'disconnected'){
+      setHostStatus('สัญญาณขาดหาย กำลังลองใหม่...', null);
+      hostDialStatus.textContent = 'สัญญาณอ่อน';
+    } else if(s === 'failed'){
+      setHostStatus('เชื่อมต่อไม่สำเร็จ — กด "หยุดแชร์" แล้วเริ่มใหม่อีกครั้ง', false);
+      hostDialStatus.textContent = 'เชื่อมต่อล้มเหลว';
+    } else if(s === 'closed'){
+      setHostStatus('ปิดการเชื่อมต่อแล้ว');
+      hostDialStatus.textContent = 'ปิดแล้ว';
     }
   };
 
@@ -464,6 +499,10 @@ function setViewStatus(text, ok){
 
 roomInput.oninput = () => { roomInput.value = roomInput.value.toUpperCase(); };
 
+if(!SUPPORTS_SCREEN_CAPTURE){
+  btnStartShare.textContent = 'เริ่มแชร์ (ใช้กล้อง)';
+}
+
 btnConnect.onclick = async () => {
   const code = roomInput.value.trim().toUpperCase();
   if(code.length < 4){ setViewStatus('กรอกรหัสห้องให้ครบก่อน', false); return; }
@@ -497,10 +536,17 @@ btnConnect.onclick = async () => {
     viewerVideo.srcObject = e.streams[0];
   };
   viewPc.onconnectionstatechange = () => {
-    if(viewPc.connectionState === 'connected'){
+    const s = viewPc.connectionState;
+    if(s === 'connecting'){
+      setViewStatus('กำลังเชื่อมต่อสัญญาณ...', null);
+    } else if(s === 'connected'){
       setViewStatus('เชื่อมต่อสำเร็จ กำลังรับชมสด', true);
-    } else if(['disconnected','failed','closed'].includes(viewPc.connectionState)){
-      setViewStatus('การเชื่อมต่อหลุด', false);
+    } else if(s === 'disconnected'){
+      setViewStatus('สัญญาณขาดหาย กำลังลองใหม่...', null);
+    } else if(s === 'failed'){
+      setViewStatus('เชื่อมต่อไม่สำเร็จ — ลองกด "เชื่อมต่อ" ใหม่อีกครั้ง', false);
+    } else if(s === 'closed'){
+      setViewStatus('ปิดการเชื่อมต่อแล้ว');
     }
   };
 
