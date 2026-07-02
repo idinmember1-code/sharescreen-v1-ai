@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ON AIR — แชร์จอสด</title>
+<title>ON AIR — แชร์จอสด v2</title>
 <style>
   :root{
     --bg:#0a0d0b;
@@ -302,6 +302,7 @@
 
 <footer>WEBRTC · PEER-TO-PEER · NO SERVER RECORDING</footer>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/peerjs/1.5.5/peerjs.min.js"></script>
 <script>
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -359,7 +360,9 @@ async function waitIceComplete(pc){
 }
 
 // ================= HOST =================
-let hostPc=null, hostStream=null, hostRoom=null, hostPollTimer=null;
+// Signaling now goes through PeerJS's free cloud broker (0.peerjs.com) instead
+// of window.storage, so this file works standalone / hosted anywhere.
+let hostPeer=null, hostStream=null, hostRoom=null, hostCall=null;
 
 const roomCodeDisplay = document.getElementById('roomCodeDisplay');
 const hostDialStatus = document.getElementById('hostDialStatus');
@@ -384,6 +387,60 @@ btnCopyCode.onclick = async () => {
     setTimeout(()=>btnCopyCode.textContent='คัดลอกรหัส', 1500);
   }catch(e){ /* clipboard may be blocked, ignore silently */ }
 };
+
+function watchCallConnectionState(pc){
+  pc.onconnectionstatechange = () => {
+    const s = pc.connectionState;
+    if(s === 'connecting'){
+      setHostStatus('กำลังเชื่อมต่อสัญญาณ...', null);
+      hostDialStatus.textContent = 'กำลังต่อ...';
+    } else if(s === 'connected'){
+      setHostStatus('เชื่อมต่อสำเร็จ กำลังแชร์สด', true);
+      hostDialStatus.textContent = 'LIVE';
+    } else if(s === 'disconnected'){
+      setHostStatus('สัญญาณขาดหาย กำลังลองใหม่...', null);
+      hostDialStatus.textContent = 'สัญญาณอ่อน';
+    } else if(s === 'failed'){
+      setHostStatus('เชื่อมต่อไม่สำเร็จ — กด "หยุดแชร์" แล้วเริ่มใหม่อีกครั้ง', false);
+      hostDialStatus.textContent = 'เชื่อมต่อล้มเหลว';
+    } else if(s === 'closed'){
+      setHostStatus('ปิดการเชื่อมต่อแล้ว');
+      hostDialStatus.textContent = 'ปิดแล้ว';
+    }
+  };
+}
+
+function createHostPeer(){
+  hostPeer = new Peer(hostRoom, { config: { iceServers: ICE_SERVERS } });
+
+  hostPeer.on('open', id => {
+    setHostStatus('รอเครื่องผู้ชมพิมพ์รหัส ' + id, null);
+  });
+
+  hostPeer.on('call', call => {
+    hostCall = call;
+    call.answer(hostStream);
+    watchCallConnectionState(call.peerConnection);
+  });
+
+  hostPeer.on('disconnected', () => {
+    setHostStatus('หลุดจากเซิร์ฟเวอร์สัญญาณ กำลังเชื่อมต่อใหม่...', null);
+    if(!hostPeer.destroyed) hostPeer.reconnect();
+  });
+
+  hostPeer.on('error', err => {
+    console.error('[peerjs host error]', err);
+    if(err.type === 'unavailable-id'){
+      // room code collided with someone else's, generate a new one and retry
+      hostRoom = genCode();
+      roomCodeDisplay.textContent = hostRoom;
+      hostPeer.destroy();
+      createHostPeer();
+    } else {
+      setHostStatus('เกิดข้อผิดพลาดจากเซิร์ฟเวอร์สัญญาณ: ' + err.type, false);
+    }
+  });
+}
 
 btnStartShare.onclick = async () => {
   let mode = 'screen';
@@ -411,79 +468,19 @@ btnStartShare.onclick = async () => {
   liveDot.classList.add('on');
   btnStartShare.disabled = true;
   stopRow.style.display='flex';
-  setHostStatus('กำลังสร้างสัญญาณเชื่อมต่อ...');
-
-  hostPc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-  hostStream.getTracks().forEach(t => hostPc.addTrack(t, hostStream));
+  setHostStatus('กำลังเชื่อมต่อเซิร์ฟเวอร์สัญญาณ...');
 
   hostStream.getVideoTracks()[0].addEventListener('ended', stopHostShare);
 
-  hostPc.onconnectionstatechange = () => {
-    const s = hostPc.connectionState;
-    if(s === 'connecting'){
-      setHostStatus('กำลังเชื่อมต่อสัญญาณ...', null);
-      hostDialStatus.textContent = 'กำลังต่อ...';
-    } else if(s === 'connected'){
-      setHostStatus('เชื่อมต่อสำเร็จ กำลังแชร์สด', true);
-      hostDialStatus.textContent = 'LIVE';
-    } else if(s === 'disconnected'){
-      setHostStatus('สัญญาณขาดหาย กำลังลองใหม่...', null);
-      hostDialStatus.textContent = 'สัญญาณอ่อน';
-    } else if(s === 'failed'){
-      setHostStatus('เชื่อมต่อไม่สำเร็จ — กด "หยุดแชร์" แล้วเริ่มใหม่อีกครั้ง', false);
-      hostDialStatus.textContent = 'เชื่อมต่อล้มเหลว';
-    } else if(s === 'closed'){
-      setHostStatus('ปิดการเชื่อมต่อแล้ว');
-      hostDialStatus.textContent = 'ปิดแล้ว';
-    }
-  };
-
-  const offer = await hostPc.createOffer();
-  await hostPc.setLocalDescription(offer);
-  await waitIceComplete(hostPc);
-
-  try{
-    const payload = JSON.stringify({
-      offer: { sdp: hostPc.localDescription.sdp, type: hostPc.localDescription.type },
-      answer: null,
-      ts: Date.now()
-    });
-    console.log('[debug] payload size (chars):', payload.length);
-    const result = await window.storage.set('room:'+hostRoom, payload, true);
-    console.log('[debug] storage.set result:', result);
-    if(!result){
-      setHostStatus('บันทึกสัญญาณไม่สำเร็จ (storage คืนค่า null) ลองอีกครั้ง', false);
-      return;
-    }
-  }catch(e){
-    console.error('[debug] storage.set threw:', e);
-    setHostStatus('บันทึกสัญญาณไม่สำเร็จ: ' + (e && e.message ? e.message : String(e)), false);
-    return;
-  }
-
-  setHostStatus('รอเครื่องผู้ชมพิมพ์รหัส ' + hostRoom, null);
-
-  // poll for answer
-  hostPollTimer = setInterval(async ()=>{
-    try{
-      const res = await window.storage.get('room:'+hostRoom, true);
-      if(res && res.value){
-        const data = JSON.parse(res.value);
-        if(data.answer && hostPc.signalingState === 'have-local-offer'){
-          await hostPc.setRemoteDescription(new RTCSessionDescription(data.answer));
-          clearInterval(hostPollTimer);
-        }
-      }
-    }catch(e){ /* key may not exist yet */ }
-  }, 1500);
+  createHostPeer();
 };
 
 function stopHostShare(){
   liveDot.classList.remove('on');
-  if(hostPollTimer) clearInterval(hostPollTimer);
+  if(hostCall) hostCall.close();
+  if(hostPeer) hostPeer.destroy();
   if(hostStream) hostStream.getTracks().forEach(t=>t.stop());
-  if(hostPc) hostPc.close();
-  hostPc=null; hostStream=null;
+  hostCall=null; hostPeer=null; hostStream=null;
   hostPreview.srcObject=null;
   btnStartShare.disabled=false;
   stopRow.style.display='none';
@@ -493,7 +490,7 @@ function stopHostShare(){
 btnStopShare.onclick = stopHostShare;
 
 // ================= VIEWER =================
-let viewPc=null, viewPollTimer=null;
+let viewPeer=null, viewCall=null;
 const roomInput = document.getElementById('roomInput');
 const btnConnect = document.getElementById('btnConnect');
 const viewerVideo = document.getElementById('viewerVideo');
@@ -516,74 +513,57 @@ btnConnect.onclick = async () => {
   if(code.length < 4){ setViewStatus('กรอกรหัสห้องให้ครบก่อน', false); return; }
 
   btnConnect.disabled = true;
-  setViewStatus('กำลังค้นหาห้อง...');
+  setViewStatus('กำลังเชื่อมต่อเซิร์ฟเวอร์สัญญาณ...');
 
-  let data=null, tries=0;
-  while(tries < 15){
-    try{
-      const res = await window.storage.get('room:'+code, true);
-      if(res && res.value){
-        data = JSON.parse(res.value);
-        if(data.offer) break;
-      }
-    }catch(e){ /* not found yet */ }
-    tries++;
-    await new Promise(r=>setTimeout(r, 1200));
-  }
+  if(viewPeer) viewPeer.destroy();
+  viewPeer = new Peer({ config: { iceServers: ICE_SERVERS } });
 
-  if(!data || !data.offer){
-    setViewStatus('ไม่พบห้องนี้ ตรวจสอบรหัสอีกครั้ง', false);
-    btnConnect.disabled = false;
-    return;
-  }
+  viewPeer.on('open', () => {
+    setViewStatus('กำลังค้นหาห้อง ' + code + '...');
+    // empty stream: viewer only receives video, doesn't send one back
+    viewCall = viewPeer.call(code, new MediaStream());
 
-  setViewStatus('พบห้องแล้ว กำลังเชื่อมต่อ...');
+    viewCall.on('stream', remoteStream => {
+      viewerVideo.srcObject = remoteStream;
+    });
 
-  viewPc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-  viewPc.ontrack = (e) => {
-    viewerVideo.srcObject = e.streams[0];
-  };
-  viewPc.onconnectionstatechange = () => {
-    const s = viewPc.connectionState;
-    if(s === 'connecting'){
-      setViewStatus('กำลังเชื่อมต่อสัญญาณ...', null);
-    } else if(s === 'connected'){
-      setViewStatus('เชื่อมต่อสำเร็จ กำลังรับชมสด', true);
-    } else if(s === 'disconnected'){
-      setViewStatus('สัญญาณขาดหาย กำลังลองใหม่...', null);
-    } else if(s === 'failed'){
-      setViewStatus('เชื่อมต่อไม่สำเร็จ — ลองกด "เชื่อมต่อ" ใหม่อีกครั้ง', false);
-    } else if(s === 'closed'){
-      setViewStatus('ปิดการเชื่อมต่อแล้ว');
-    }
-  };
-
-  await viewPc.setRemoteDescription(new RTCSessionDescription(data.offer));
-  const answer = await viewPc.createAnswer();
-  await viewPc.setLocalDescription(answer);
-  await waitIceComplete(viewPc);
-
-  try{
-    const latest = await window.storage.get('room:'+code, true);
-    const latestData = latest && latest.value ? JSON.parse(latest.value) : data;
-    latestData.answer = { sdp: viewPc.localDescription.sdp, type: viewPc.localDescription.type };
-    const payload = JSON.stringify(latestData);
-    console.log('[debug] answer payload size (chars):', payload.length);
-    const result = await window.storage.set('room:'+code, payload, true);
-    console.log('[debug] storage.set result:', result);
-    if(!result){
-      setViewStatus('ส่งสัญญาณตอบกลับไม่สำเร็จ (storage คืนค่า null)', false);
+    viewCall.on('error', e => {
+      console.error('[peerjs view call error]', e);
+      setViewStatus('เชื่อมต่อไม่สำเร็จ: ' + (e && e.message ? e.message : String(e)), false);
       btnConnect.disabled = false;
-      return;
-    }
-  }catch(e){
-    console.error('[debug] storage.set threw:', e);
-    setViewStatus('ส่งสัญญาณตอบกลับไม่สำเร็จ: ' + (e && e.message ? e.message : String(e)), false);
-    btnConnect.disabled = false;
-    return;
-  }
+    });
 
-  btnConnect.disabled = false;
+    viewCall.on('close', () => {
+      setViewStatus('การแชร์สิ้นสุดแล้ว');
+    });
+
+    viewCall.peerConnection.onconnectionstatechange = () => {
+      const s = viewCall.peerConnection.connectionState;
+      if(s === 'connecting'){
+        setViewStatus('กำลังเชื่อมต่อสัญญาณ...', null);
+      } else if(s === 'connected'){
+        setViewStatus('เชื่อมต่อสำเร็จ กำลังรับชมสด', true);
+      } else if(s === 'disconnected'){
+        setViewStatus('สัญญาณขาดหาย กำลังลองใหม่...', null);
+      } else if(s === 'failed'){
+        setViewStatus('เชื่อมต่อไม่สำเร็จ — ลองกด "เชื่อมต่อ" ใหม่อีกครั้ง', false);
+      } else if(s === 'closed'){
+        setViewStatus('ปิดการเชื่อมต่อแล้ว');
+      }
+    };
+
+    btnConnect.disabled = false;
+  });
+
+  viewPeer.on('error', err => {
+    console.error('[peerjs view error]', err);
+    if(err.type === 'peer-unavailable'){
+      setViewStatus('ไม่พบห้องนี้ ตรวจสอบรหัสอีกครั้ง', false);
+    } else {
+      setViewStatus('เกิดข้อผิดพลาดจากเซิร์ฟเวอร์สัญญาณ: ' + err.type, false);
+    }
+    btnConnect.disabled = false;
+  });
 };
 </script>
 
