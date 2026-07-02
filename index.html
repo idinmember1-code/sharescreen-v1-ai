@@ -256,7 +256,7 @@
   <!-- HOST PANEL -->
   <section id="hostPanel" class="panel">
     <h1 class="title">แชร์จอสด</h1>
-    <p class="sub">กดเริ่ม แล้วเลือกหน้าจอ/แท็บที่จะแชร์ จากนั้นบอกรหัสห้องให้อีกเครื่องพิมพ์ในแท็บ "ดูจอ"</p>
+    <p class="sub">กดเริ่ม แล้วเลือกหน้าจอ/แท็บที่จะแชร์ จากนั้นบอกรหัสห้องให้อีก�[...]</p>
 
     <div class="dial-wrap">
       <div class="dial">
@@ -279,7 +279,7 @@
     </div>
 
     <div class="status-line"><span class="led" id="hostLed"></span><span id="hostStatusText">รอเริ่มการแชร์</span></div>
-    <div class="hint" id="hostHint"><b>หมายเหตุ:</b> คอมพิวเตอร์ (Chrome/Edge) แชร์ได้ทั้งหน้าจอ ส่วน <b>iPad/iPhone</b> ตัว Safari ไม่รองรับแคปเจอร์หน้าจอเลย ระบบจะสลับไปแชร์ภาพจากกล้องแทนโดยอัตโนมัติ ทั้งสองเครื่องต้องเปิดหน้านี้ค้างไว้ระหว่างแชร์</div>
+    <div class="hint" id="hostHint"><b>หมายเหตุ:</b> คอมพิวเตอร์ (Chrome/Edge) แชร์ได้ทั้งหน้าจอ ส่วน <b>iPad/iPhone</b>[...]</div>
   </section>
 
   <!-- VIEWER PANEL -->
@@ -304,7 +304,7 @@
     </div>
 
     <div class="status-line"><span class="led" id="viewLed"></span><span id="viewStatusText">รอพิมพ์รหัสห้อง</span></div>
-    <div class="hint">รองรับ iPad/iPhone/คอมพิวเตอร์ ทุกเครื่องดูได้ปกติ ถ้าเชื่อมต่อไม่ติดลองรอสักครู่แล้วกด "เชื่อมต่อ" ใหม่</div>
+    <div class="hint">รองรับ iPad/iPhone/คอมพิวเตอร์ ทุกเครื่องดูได้ปกติ ถ้าเชื่อมต่อไม่ติด�[...]</div>
   </section>
 </main>
 
@@ -356,7 +356,7 @@ async function waitIceComplete(pc){
   if(pc.iceGatheringState === 'complete') return;
   await new Promise(resolve=>{
     function check(){
-      if(pc.iceGatheringState === 'complete'){
+      if(pc.iceGatheringstate === 'complete'){
         pc.removeEventListener('icegatheringstatechange', check);
         resolve();
       }
@@ -466,7 +466,7 @@ btnStartShare.onclick = async () => {
   }
 
   if(mode === 'camera'){
-    setHostStatus('อุปกรณ์นี้แชร์หน้าจอไม่ได้ (ข้อจำกัดของ iPad/iPhone) กำลังแชร์ภาพจากกล้องแทน', null);
+    setHostStatus('อุปกรณ์นี้แชร์หน้าจอไม่ได้ (ข้อจำกัดของ iPad/iPhone) กำลังแชร์ภาพจากกล้[...]');
   }
 
   hostPreview.srcObject = hostStream;
@@ -536,12 +536,19 @@ btnConnect.onclick = async () => {
   setViewStatus('กำลังเชื่อมต่อเซิร์ฟเวอร์สัญญาณ...');
 
   if(viewPeer) viewPeer.destroy();
-  viewPeer = new Peer({ config: { iceServers: ICE_SERVERS } });
+  // Create a Peer with an auto-generated id: pass undefined as the first arg
+  viewPeer = new Peer(undefined, { config: { iceServers: ICE_SERVERS } });
 
   viewPeer.on('open', () => {
     setViewStatus('กำลังค้นหาห้อง ' + code + '...');
-    // empty stream: viewer only receives video, doesn't send one back
-    viewCall = viewPeer.call(code, new MediaStream());
+    // viewer doesn't have a local stream to send, so call with undefined
+    viewCall = viewPeer.call(code, undefined);
+
+    if(!viewCall){
+      setViewStatus('ไม่สามารถเริ่มการโทรได้', false);
+      btnConnect.disabled = false;
+      return;
+    }
 
     viewCall.on('stream', remoteStream => {
       viewerVideo.srcObject = remoteStream;
@@ -564,30 +571,32 @@ btnConnect.onclick = async () => {
       setViewStatus('การแชร์สิ้นสุดแล้ว');
     });
 
-    viewCall.peerConnection.onconnectionstatechange = () => {
-      const s = viewCall.peerConnection.connectionState;
-      if(s === 'connecting'){
-        setViewStatus('กำลังเชื่อมต่อสัญญาณ...', null);
-      } else if(s === 'connected'){
-        setViewStatus('เชื่อมต่อสำเร็จ กำลังรับชมสด', true);
-      } else if(s === 'disconnected'){
-        setViewStatus('สัญญาณขาดหาย กำลังลองใหม่...', null);
-      } else if(s === 'failed'){
-        setViewStatus('เชื่อมต่อไม่สำเร็จ — ลองกด "เชื่อมต่อ" ใหม่อีกครั้ง', false);
-      } else if(s === 'closed'){
-        setViewStatus('ปิดการเชื่อมต่อแล้ว');
-      }
-    };
+    if(viewCall.peerConnection){
+      viewCall.peerConnection.onconnectionstatechange = () => {
+        const s = viewCall.peerConnection.connectionState;
+        if(s === 'connecting'){
+          setViewStatus('กำลังเชื่อมต่อสัญญาณ...', null);
+        } else if(s === 'connected'){
+          setViewStatus('เชื่อมต่อสำเร็จ กำลังรับชมสด', true);
+        } else if(s === 'disconnected'){
+          setViewStatus('สัญญาณขาดหาย กำลังลองใหม่...', null);
+        } else if(s === 'failed'){
+          setViewStatus('เชื่อมต่อไม่สำเร็จ — ลองกด "เชื่อมต่อ" ใหม่อีกครั้ง', false);
+        } else if(s === 'closed'){
+          setViewStatus('ปิดการเชื่อมต่อแล้ว');
+        }
+      };
+    }
 
     btnConnect.disabled = false;
   });
 
   viewPeer.on('error', err => {
     console.error('[peerjs view error]', err);
-    if(err.type === 'peer-unavailable'){
+    if(err && err.type === 'peer-unavailable'){
       setViewStatus('ไม่พบห้องนี้ ตรวจสอบรหัสอีกครั้ง', false);
     } else {
-      setViewStatus('เกิดข้อผิดพลาดจากเซิร์ฟเวอร์สัญญาณ: ' + err.type, false);
+      setViewStatus('เกิดข้อผิดพลาดจากเซิร์ฟเวอร์สัญญาณ: ' + (err && err.type ? err.type : String(err)), false);
     }
     btnConnect.disabled = false;
   });
