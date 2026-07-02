@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ON AIR — แชร์จอสด v2</title>
+<title>ON AIR — แชร์จอสด v3 ai</title>
 <style>
   :root{
     --bg:#0a0d0b;
@@ -293,7 +293,15 @@
       <button class="primary" id="btnConnect">เชื่อมต่อ</button>
     </div>
 
-    <video id="viewerVideo" autoplay playsinline style="margin-top:16px;"></video>
+    <!-- FIX: added `muted` so autoplay isn't blocked by the browser, since the
+         incoming stream may contain an audio track. Browsers refuse to
+         autoplay <video> elements that have unmuted audio without a user
+         gesture, which silently prevented the picture from ever showing. -->
+    <video id="viewerVideo" autoplay muted playsinline style="margin-top:16px;"></video>
+
+    <div class="row" id="unmuteRow" style="display:none;">
+      <button class="ghost" id="btnUnmute">🔇 เปิดเสียง</button>
+    </div>
 
     <div class="status-line"><span class="led" id="viewLed"></span><span id="viewStatusText">รอพิมพ์รหัสห้อง</span></div>
     <div class="hint">รองรับ iPad/iPhone/คอมพิวเตอร์ ทุกเครื่องดูได้ปกติ ถ้าเชื่อมต่อไม่ติดลองรอสักครู่แล้วกด "เชื่อมต่อ" ใหม่</div>
@@ -496,11 +504,23 @@ const btnConnect = document.getElementById('btnConnect');
 const viewerVideo = document.getElementById('viewerVideo');
 const viewStatusText = document.getElementById('viewStatusText');
 const viewLed = document.getElementById('viewLed');
+const unmuteRow = document.getElementById('unmuteRow');
+const btnUnmute = document.getElementById('btnUnmute');
 
 function setViewStatus(text, ok){
   viewStatusText.textContent = text;
   viewLed.className = 'led' + (ok===true?' ok':ok===false?' err':'');
 }
+
+// FIX: explicit unmute control. Autoplay-with-sound is blocked by browsers
+// unless the video starts muted, so we start muted (see markup change above)
+// and let the viewer opt into audio with a real user gesture/click, which
+// browsers do allow.
+btnUnmute.onclick = () => {
+  viewerVideo.muted = false;
+  viewerVideo.play().catch(()=>{});
+  btnUnmute.textContent = '🔊 เสียงเปิดอยู่';
+};
 
 roomInput.oninput = () => { roomInput.value = roomInput.value.toUpperCase(); };
 
@@ -525,6 +545,13 @@ btnConnect.onclick = async () => {
 
     viewCall.on('stream', remoteStream => {
       viewerVideo.srcObject = remoteStream;
+      // FIX: explicitly kick off playback and surface the unmute control
+      // instead of relying purely on the `autoplay` attribute, which some
+      // browsers silently ignore once a stream is attached after page load.
+      viewerVideo.play().catch(err => {
+        console.warn('[viewer autoplay blocked]', err);
+      });
+      unmuteRow.style.display = 'flex';
     });
 
     viewCall.on('error', e => {
